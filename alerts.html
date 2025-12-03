@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alerts & Notifications - APC UPS Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        * {
+            font-family: 'Inter', sans-serif;
+        }
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        body {
+            background: linear-gradient(135deg, #1a2332 0%, #2d3748 100%);
+            min-height: 100vh;
+        }
+        .glass {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 212, 255, 0.2);
+        }
+        .gradient-text {
+            background: linear-gradient(135deg, #00d4ff, #3b82f6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .alert-slide {
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="text-white">
+    <!-- Navigation -->
+    <nav class="glass fixed top-0 left-0 right-0 z-50 px-6 py-4">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center space-x-4">
+                <img src="resources/ups-icon.png" alt="UPS Icon" class="w-8 h-8">
+                <h1 class="text-xl font-bold gradient-text">APC UPS Monitor</h1>
+            </div>
+            <div class="flex space-x-6">
+                <a href="index.html" class="text-gray-300 hover:text-white transition-colors">Dashboard</a>
+                <a href="devices.html" class="text-gray-300 hover:text-white transition-colors">Devices</a>
+                <a href="alerts.html" class="text-blue-400 hover:text-blue-300 transition-colors border-b-2 border-blue-400">Alerts</a>
+                <div class="flex items-center space-x-2">
+                    <div class="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <span class="text-sm text-gray-300">System Online</span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <section class="pt-24 pb-16">
+        <div class="max-w-7xl mx-auto px-6">
+            <!-- Header -->
+            <div class="flex items-center justify-between mb-8">
+                <div>
+                    <h2 class="text-3xl font-bold gradient-text mb-2">Alerts & Notifications</h2>
+                    <p class="text-gray-300">Monitor and manage system alerts</p>
+                </div>
+                <div class="flex space-x-4">
+                    <button class="px-4 py-2 bg-green-600 rounded-lg hover:bg-green-700 transition-colors" onclick="acknowledgeAllAlerts()">Acknowledge All</button>
+                    <button class="px-4 py-2 bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors" onclick="refreshAlerts()">Refresh</button>
+                </div>
+            </div>
+
+            <!-- Alert Statistics -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                <div class="glass rounded-xl p-6 text-center card-hover">
+                    <div class="text-3xl font-bold text-red-400 mb-2" id="criticalCount">3</div>
+                    <div class="text-gray-300">Critical Alerts</div>
+                </div>
+                <div class="glass rounded-xl p-6 text-center card-hover">
+                    <div class="text-3xl font-bold text-yellow-400 mb-2" id="warningCount">7</div>
+                    <div class="text-gray-300">Warning Alerts</div>
+                </div>
+                <div class="glass rounded-xl p-6 text-center card-hover">
+                    <div class="text-3xl font-bold text-blue-400 mb-2" id="infoCount">12</div>
+                    <div class="text-gray-300">Info Alerts</div>
+                </div>
+                <div class="glass rounded-xl p-6 text-center card-hover">
+                    <div class="text-3xl font-bold text-green-400 mb-2" id="resolvedCount">28</div>
+                    <div class="text-gray-300">Resolved Today</div>
+                </div>
+            </div>
+
+            <!-- Active Alerts -->
+            <div class="glass rounded-xl p-6 mb-8">
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="text-xl font-bold">Active Alerts</h3>
+                    <div class="flex space-x-2">
+                        <button class="px-3 py-1 bg-red-600 rounded text-sm hover:bg-red-700 transition-colors" onclick="filterAlerts('critical')">Critical</button>
+                        <button class="px-3 py-1 bg-yellow-600 rounded text-sm hover:bg-yellow-700 transition-colors" onclick="filterAlerts('warning')">Warning</button>
+                        <button class="px-3 py-1 bg-blue-600 rounded text-sm hover:bg-blue-700 transition-colors" onclick="filterAlerts('info')">Info</button>
+                        <button class="px-3 py-1 bg-gray-600 rounded text-sm hover:bg-gray-700 transition-colors" onclick="filterAlerts('all')">All</button>
+                    </div>
+                </div>
+                
+                <div class="space-y-4" id="activeAlerts">
+                    <!-- Active alerts will be generated by JavaScript -->
+                </div>
+            </div>
+
+            <!-- Alert History Chart -->
+            <div class="glass rounded-xl p-6 mb-8">
+                <h3 class="text-xl font-bold mb-4">Alert History</h3>
+                <div id="alertHistoryChart" style="height: 300px;"></div>
+            </div>
+
+            <!-- Alert Rules Configuration -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="glass rounded-xl p-6">
+                    <h4 class="text-xl font-bold mb-4">Alert Rules</h4>
+                    <div class="space-y-4">
+                        <div class="border border-gray-600 rounded-lg p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-medium">Battery Level Critical</span>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" class="sr-only peer" checked>
+                                    <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                </label>
+                            </div>
+                            <p class="text-sm text-gray-400">Trigger when battery level drops below 20%</p>
+                        </div>
+                        
+                        <div class="border border-gray-600 rounded-lg p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-medium">High Temperature</span>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" class="sr-only peer" checked>
+                                    <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                </label>
+                            </div>
+                            <p class="text-sm text-gray-400">Trigger when temperature exceeds 40°C</p>
+                        </div>
+                        
+                        <div class="border border-gray-600 rounded-lg p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-medium">UPS Offline</span>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" class="sr-only peer" checked>
+                                    <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                </label>
+                            </div>
+                            <p class="text-sm text-gray-400">Trigger when UPS goes offline</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass rounded-xl p-6">
+                    <h4 class="text-xl font-bold mb-4">Notification Settings</h4>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Email Recipients</label>
+                            <textarea class="w-full px-4 py-2 bg-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500" rows="3" placeholder="admin@company.com&#10;ops-team@company.com"></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">SMS Notifications</label>
+                            <input type="tel" class="w-full px-4 py-2 bg-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="+1 (555) 123-4567">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Webhook URL</label>
+                            <input type="url" class="w-full px-4 py-2 bg-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="https://api.company.com/alerts">
+                        </div>
+                        <button class="w-full px-4 py-2 bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">Save Settings</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Alert Detail Modal -->
+    <div id="alertModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
+        <div class="glass rounded-xl p-8 max-w-2xl w-full mx-4">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-2xl font-bold gradient-text">Alert Details</h3>
+                <button onclick="closeAlertModal()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+            </div>
+            
+            <div class="space-y-4">
+                <div class="flex justify-between">
+                    <span class="text-gray-300">Alert ID:</span>
+                    <span id="modalAlertId" class="mono">ALERT-001</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-300">Device:</span>
+                    <span id="modalAlertDevice">UPS-01</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-300">Severity:</span>
+                    <span id="modalAlertSeverity" class="text-red-400">Critical</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-300">Time:</span>
+                    <span id="modalAlertTime">2024-01-15 14:30:25</span>
+                </div>
+                <div>
+                    <span class="text-gray-300">Message:</span>
+                    <p id="modalAlertMessage" class="mt-2 p-3 bg-gray-700 rounded-lg">Battery level critical on UPS-01. Current level: 15%</p>
+                </div>
+                <div>
+                    <span class="text-gray-300">Suggested Action:</span>
+                    <p id="modalAlertAction" class="mt-2 p-3 bg-blue-700 rounded-lg">Check UPS battery status and consider replacement if level continues to drop.</p>
+                </div>
+            </div>
+            
+            <div class="flex space-x-4 mt-8">
+                <button class="px-4 py-2 bg-green-600 rounded-lg hover:bg-green-700 transition-colors" onclick="acknowledgeAlert()">Acknowledge</button>
+                <button class="px-4 py-2 bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors" onclick="snoozeAlert()">Snooze (1h)</button>
+                <button class="px-4 py-2 bg-gray-600 rounded-lg hover:bg-gray-700 transition-colors" onclick="escalateAlert()">Escalate</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="glass py-8 mt-16">
+        <div class="max-w-7xl mx-auto px-6 text-center">
+            <p class="text-gray-400">&copy; 2024 APC UPS Monitoring System. Professional power management solution.</p>
+        </div>
+    </footer>
+
+    <script src="alerts.js"></script>
+</body>
+</html>
