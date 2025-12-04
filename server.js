@@ -5,7 +5,7 @@ const snmp = require('net-snmp');
 const Database = require('better-sqlite3');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 const publicDir = __dirname;
 app.use(express.static(publicDir));
@@ -291,5 +291,5 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`UPS dashboard running at http://localhost:${PORT}`);
+  console.log(`UPS dashboard running at http://172.16.200.220:${PORT}`);
 });
