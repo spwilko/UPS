@@ -9,13 +9,19 @@ let currentTimelineRangeDays = 1;
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', async function() {
-    initializeApp();
-    upsData = await fetchUPSData();
-    updateDashboardStats();
-    renderUPSGrid();
-    initializeCharts();
-    startAutoRefresh();
-    initializeAnimations();
+	// Page-specific initializations
+	if (document.getElementById('upsGrid')) { // Dashboard page
+		initializeApp();
+		upsData = await fetchUPSData();
+		renderUPSGrid();
+		initializeCharts();
+		startAutoRefresh();
+		initializeAnimations();
+	} else if (document.getElementById('deviceList')) { // Mobile page
+		initializeMobilePage();
+	} else if (document.getElementById('performanceChart')) {
+		// Performance page is handled by its own script
+	}
 });
 
 // Initialize application
@@ -25,7 +31,7 @@ function initializeApp() {
     // Set up search functionality
     const searchInput = document.getElementById('searchInput');
     if (searchInput) {
-        searchInput.addEventListener('input', handleSearch);
+        searchInput.addEventListener('input', handleDashboardSearch);
     }
     
     // Initialize text splitting animation
@@ -45,26 +51,6 @@ async function fetchUPSData() {
         generateUPSData();
         return upsData;
     }
-}
-
-// Update top-of-dashboard quick stats based on current upsData
-function updateDashboardStats() {
-    const totalEl = document.getElementById('totalUpsCount');
-    const onlineEl = document.getElementById('onlineUpsCount');
-    const warningEl = document.getElementById('warningUpsCount');
-    const criticalEl = document.getElementById('criticalUpsCount');
-
-    if (!totalEl || !onlineEl || !warningEl || !criticalEl) return;
-
-    const total = upsData.length;
-    const online = upsData.filter(ups => ups.status === 'online').length;
-    const warning = upsData.filter(ups => ups.status === 'warning').length;
-    const critical = upsData.filter(ups => ups.status === 'critical').length;
-
-    totalEl.textContent = total;
-    onlineEl.textContent = online;
-    warningEl.textContent = warning;
-    criticalEl.textContent = critical;
 }
 // Generate mock UPS data
 function generateUPSData() {
@@ -122,7 +108,7 @@ function renderUPSGrid() {
     
     // Animate cards
     anime({
-        targets: '.ups-card',
+        targets: '#upsGrid .device-item',
         opacity: [0, 1],
         translateY: [20, 0],
         delay: anime.stagger(50),
@@ -132,58 +118,27 @@ function renderUPSGrid() {
 }
 
 // Create UPS card element
-function createUPSCard(ups) {
-    const card = document.createElement('div');
-    card.className = `ups-card glass rounded-xl p-6 card-hover cursor-pointer border-l-4 ${getStatusBorderColor(ups.status)}`;
-    card.onclick = () => showUPSDetail(ups);
-    
+function createUPSCard(ups) { // Renamed from createUPSCard to createUPSRow for clarity
+    const item = document.createElement('div');
+    item.className = `device-item glass rounded-lg p-3 grid grid-cols-12 gap-2 items-center text-sm`;
+    item.dataset.name = ups.name;
+
     const statusColor = getStatusColor(ups.status);
-    const batteryColor = getBatteryColor(ups.battery);
-    
-    card.innerHTML = `
-        <div class="flex items-center justify-between mb-4">
-            <h4 class="font-bold text-lg">${ups.name}</h4>
-            <div class="flex items-center space-x-2">
-                <div class="w-3 h-3 ${statusColor} rounded-full"></div>
-                <span class="text-sm capitalize">${ups.status}</span>
-            </div>
+
+    item.innerHTML = `
+        <div class="col-span-4">
+            <a href="performance.html?upsId=${ups.id}" class="font-bold hover:text-blue-400 transition-colors truncate">${ups.name}</a>
         </div>
-        
-        <div class="space-y-3">
-            <div class="flex justify-between text-sm">
-                <span class="text-gray-300">Battery:</span>
-                <span class="font-medium">${ups.battery}%</span>
-            </div>
-            <div class="w-full bg-gray-700 rounded-full h-2">
-                <div class="${batteryColor} h-2 rounded-full transition-all duration-500" style="width: ${ups.battery}%"></div>
-            </div>
-            
-            <div class="flex justify-between text-sm">
-                <span class="text-gray-300">Load:</span>
-                <span class="font-medium">${ups.load}%</span>
-            </div>
-            <div class="w-full bg-gray-700 rounded-full h-2">
-                <div class="bg-blue-500 h-2 rounded-full transition-all duration-500" style="width: ${ups.load}%"></div>
-            </div>
-            
-            <div class="flex justify-between text-sm">
-                <span class="text-gray-300">Temperature:</span>
-                <span class="font-medium">${ups.temperature}°C</span>
-            </div>
-            
-            <div class="flex justify-between text-sm">
-                <span class="text-gray-300">Runtime:</span>
-                <span class="font-medium mono">${Math.floor(ups.runtime / 60)}h ${ups.runtime % 60}m</span>
-            </div>
-            
-            <div class="flex justify-between text-xs text-gray-400 mt-3">
-                <span>IP: ${ups.ip}</span>
-                <span>${ups.lastUpdate}</span>
-            </div>
+        <div class="col-span-3 flex items-center space-x-2">
+            <div class="w-2.5 h-2.5 ${statusColor} rounded-full"></div>
+            <span class="capitalize">${ups.status}</span>
         </div>
+        <div class="col-span-2 text-center font-semibold">${ups.battery}%</div>
+        <div class="col-span-2 text-center font-semibold">${ups.load}%</div>
+        <div class="col-span-1 text-center font-semibold">${ups.temperature}°C</div>
     `;
-    
-    return card;
+
+    return item;
 }
 
 // Get status color classes
@@ -236,17 +191,17 @@ function filterDevices(filter) {
 }
 
 // Handle search
-function handleSearch(event) {
+function handleDashboardSearch(event) {
     const query = event.target.value.toLowerCase();
-    const grid = document.getElementById('upsGrid');
-    const cards = grid.querySelectorAll('.ups-card');
+    const upsGrid = document.getElementById('upsGrid');
+    const upsItems = upsGrid.querySelectorAll('.device-item');
     
-    cards.forEach(card => {
-        const text = card.textContent.toLowerCase();
+    upsItems.forEach(item => {
+        const text = item.textContent.toLowerCase();
         if (text.includes(query)) {
-            card.style.display = 'block';
+            item.style.display = 'grid'; // Use 'grid' to maintain the grid layout
         } else {
-            card.style.display = 'none';
+            item.style.display = 'none';
         }
     });
 }
@@ -278,7 +233,6 @@ function startAutoRefresh() {
     autoRefreshInterval = setInterval(async () => {
         upsData = await fetchUPSData();
         updateDashboardStats();
-        renderUPSGrid();
         updateCharts();
     }, 30000);
 }
@@ -293,9 +247,6 @@ function stopAutoRefresh() {
 
 // Initialize charts
 function initializeCharts() {
-    initializeBatteryChart();
-    initializeLoadChart();
-    initializePerformanceCharts();
 }
 
 // Initialize timeline charts on first load
@@ -303,101 +254,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Slight delay to ensure layout is ready
     setTimeout(() => {
         initializeTimelineCharts();
-    }, 500);
+    }, 500); // Delay to ensure DOM is ready
 });
-
-// Initialize battery chart
-function initializeBatteryChart() {
-    const chart = echarts.init(document.getElementById('batteryChart'));
-    
-    const option = {
-        backgroundColor: 'transparent',
-        textStyle: { color: '#ffffff' },
-        tooltip: {
-            trigger: 'item',
-            backgroundColor: 'rgba(0, 0, 0, 0.8)',
-            borderColor: '#00d4ff',
-            textStyle: { color: '#ffffff' }
-        },
-        series: [{
-            name: 'Battery Levels',
-            type: 'pie',
-            radius: ['40%', '70%'],
-            center: ['50%', '50%'],
-            data: [
-                { value: 15, name: 'Critical (< 30%)', itemStyle: { color: '#ef4444' } },
-                { value: 25, name: 'Warning (30-60%)', itemStyle: { color: '#f59e0b' } },
-                { value: 60, name: 'Good (> 60%)', itemStyle: { color: '#10b981' } }
-            ],
-            emphasis: {
-                itemStyle: {
-                    shadowBlur: 10,
-                    shadowOffsetX: 0,
-                    shadowColor: 'rgba(0, 212, 255, 0.5)'
-                }
-            },
-            label: {
-                color: '#ffffff'
-            }
-        }]
-    };
-    
-    chart.setOption(option);
-    
-    // Make chart responsive
-    window.addEventListener('resize', () => chart.resize());
-}
-
-// Initialize load chart
-function initializeLoadChart() {
-    const chart = echarts.init(document.getElementById('loadChart'));
-    
-    const option = {
-        backgroundColor: 'transparent',
-        textStyle: { color: '#ffffff' },
-        tooltip: {
-            trigger: 'axis',
-            backgroundColor: 'rgba(0, 0, 0, 0.8)',
-            borderColor: '#00d4ff',
-            textStyle: { color: '#ffffff' }
-        },
-        xAxis: {
-            type: 'category',
-            data: upsData.slice(0, 10).map(ups => ups.name),
-            axisLabel: { color: '#ffffff' },
-            axisLine: { lineStyle: { color: '#374151' } }
-        },
-        yAxis: {
-            type: 'value',
-            max: 100,
-            axisLabel: { color: '#ffffff', formatter: '{value}%' },
-            axisLine: { lineStyle: { color: '#374151' } },
-            splitLine: { lineStyle: { color: '#374151' } }
-        },
-        series: [{
-            name: 'Load %',
-            type: 'bar',
-            data: upsData.slice(0, 10).map(ups => ups.load),
-            itemStyle: {
-                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                    { offset: 0, color: '#00d4ff' },
-                    { offset: 1, color: '#3b82f6' }
-                ])
-            },
-            emphasis: {
-                itemStyle: {
-                    shadowBlur: 10,
-                    shadowColor: 'rgba(0, 212, 255, 0.5)'
-                }
-            }
-        }]
-    };
-    
-    chart.setOption(option);
-    
-    // Make chart responsive
-    window.addEventListener('resize', () => chart.resize());
-}
 
 // Initialize performance charts (battery, load, temperature per UPS)
 function initializePerformanceCharts() {
@@ -532,9 +390,6 @@ function initializePerformanceCharts() {
 
 // Update charts with new data
 function updateCharts() {
-    initializeBatteryChart();
-    initializeLoadChart();
-    initializePerformanceCharts();
     updateTimelineCharts();
 }
 
@@ -695,21 +550,23 @@ async function updateTimelineCharts() {
 function initializeAnimations() {
     // Animate hero text
     if (typeof anime !== 'undefined') {
-        anime({
-            targets: '[data-splitting] .char',
-            opacity: [0, 1],
-            translateY: [50, 0],
-            delay: anime.stagger(50),
-            duration: 800,
-            easing: 'easeOutQuart'
-        });
+        // Removed hero text animation as hero section is removed
         
         // Animate stats cards
         anime({
-            targets: '.card-hover',
+            targets: '#upsGrid .device-item', // Target the new UPS list items
             opacity: [0, 1],
             translateY: [30, 0],
             delay: anime.stagger(100, {start: 500}),
+            duration: 600,
+            easing: 'easeOutQuart'
+        });
+        // Animate performance charts
+        anime({
+            targets: '.echarts-for-react', // Assuming ECharts renders to a div with this class or similar
+            opacity: [0, 1],
+            translateY: [30, 0],
+            delay: anime.stagger(100, {start: 800}),
             duration: 600,
             easing: 'easeOutQuart'
         });
@@ -720,3 +577,60 @@ function initializeAnimations() {
 window.addEventListener('beforeunload', function() {
     stopAutoRefresh();
 });
+
+// --- Mobile Page Logic ---
+
+async function initializeMobilePage() {
+    await populateMobileDeviceList();
+
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', handleMobileSearch);
+    }
+}
+
+async function populateMobileDeviceList() {
+    const deviceList = document.getElementById('deviceList');
+    if (!deviceList) return;
+
+
+    const devices = await fetchUPSData();
+    deviceList.innerHTML = ''; // Clear existing
+
+    devices.forEach(device => {
+        const deviceItem = createMobileDeviceItem(device);
+        deviceList.appendChild(deviceItem);
+    });
+}
+
+function createMobileDeviceItem(ups) {
+    const item = document.createElement('div');
+    item.className = `device-item glass rounded-lg p-3 grid grid-cols-12 gap-2 items-center text-sm`;
+    item.dataset.name = ups.name;
+
+    const statusColor = getStatusColor(ups.status);
+
+    item.innerHTML = `
+        <div class="col-span-4">
+            <a href="performance.html?upsId=${ups.id}" class="font-bold hover:text-blue-400 transition-colors truncate">${ups.name}</a>
+        </div>
+        <div class="col-span-3 flex items-center space-x-2">
+            <div class="w-2.5 h-2.5 ${statusColor} rounded-full"></div>
+            <span class="capitalize">${ups.status}</span>
+        </div>
+        <div class="col-span-2 text-center font-semibold">${ups.battery}%</div>
+        <div class="col-span-2 text-center font-semibold">${ups.load}%</div>
+        <div class="col-span-1 text-center font-semibold">${ups.temperature}°C</div>
+    `;
+
+    return item;
+}
+
+function handleMobileSearch(event) {
+    const searchTerm = event.target.value.toLowerCase();
+    const items = document.querySelectorAll('.device-item');
+    items.forEach(item => {
+        const name = item.dataset.name.toLowerCase();
+        item.style.display = name.includes(searchTerm) ? '' : 'none';
+    });
+}

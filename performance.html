@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UPS Performance History</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="resources/favicon.png">
+    <style>
+        * {
+            font-family: 'Inter', sans-serif;
+        }
+        body {
+            background: linear-gradient(135deg, #1a2332 0%, #2d3748 100%);
+            color: white;
+        }
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-gray-900">
+    <div class="container mx-auto px-4 py-8">
+        <header class="mb-6">
+            <h1 class="text-3xl font-semibold mb-2">UPS Performance History</h1>
+            <a href="mobile.html" class="text-blue-500 hover:underline">Back to Mobile View</a>
+        </header>
+
+        <section class="glass rounded-lg p-6">
+            <h2 class="text-xl font-bold mb-4">Historical Data</h2>
+            <div id="performanceChart" style="height: 400px;"></div>
+        </section>
+    </div>
+
+    <script>
+        // Function to extract UPS ID from URL parameters
+        function getUpsIdFromUrl() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('upsId');
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            const upsId = getUpsIdFromUrl();
+            if (!upsId) {
+                console.error('UPS ID not found in URL.');
+                document.getElementById('performanceChart').innerText = 'Error: No UPS ID specified.';
+                return;
+            }
+
+            const history = await fetch(`/api/ups/history?range=7`).then(res => res.json());
+            const upsHistory = history.filter(h => h.id === upsId);
+
+            const chart = echarts.init(document.getElementById('performanceChart'));
+
+            const option = {
+                backgroundColor: 'transparent',
+                textStyle: { color: '#ffffff' },
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    borderColor: '#00d4ff',
+                    textStyle: { color: '#ffffff' }
+                },
+                legend: {
+                    data: ['Battery', 'Load', 'Temperature'],
+                    textStyle: { color: '#ffffff' }
+                },
+                xAxis: {
+                    type: 'time',
+                    axisLabel: { color: '#ffffff' },
+                    axisLine: { lineStyle: { color: '#374151' } }
+                },
+                yAxis: [
+                    { type: 'value', name: 'Percent', min: 0, max: 100, axisLabel: { color: '#ffffff', formatter: '{value}%' } },
+                    { type: 'value', name: 'Temp', axisLabel: { color: '#ffffff', formatter: '{value}°C' } }
+                ],
+                series: [
+                    { name: 'Battery', type: 'line', data: upsHistory.map(p => [p.timestamp, p.battery]), yAxisIndex: 0, smooth: true, itemStyle: { color: '#10b981' } },
+                    { name: 'Load', type: 'line', data: upsHistory.map(p => [p.timestamp, p.load]), yAxisIndex: 0, smooth: true, itemStyle: { color: '#3b82f6' } },
+                    { name: 'Temperature', type: 'line', data: upsHistory.map(p => [p.timestamp, p.temperature]), yAxisIndex: 1, smooth: true, itemStyle: { color: '#f59e0b' } }
+                ]
+            };
+
+            chart.setOption(option);
+            window.addEventListener('resize', () => chart.resize());
+        });
+    </script>
+    <script src="main.js"></script>
+</body>
+</html>
