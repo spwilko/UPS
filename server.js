@@ -3,6 +3,61 @@ const path = require('path');
 const fs = require('fs');
 const snmp = require('net-snmp');
 const Database = require('better-sqlite3');
+const https = require('https');
+
+// Manually load .env file
+const envConfig = {};
+try {
+  const envFileContent = fs.readFileSync(path.join(__dirname, '.env'), 'utf8');
+  envFileContent.split('\n').forEach(line => {
+    const parts = line.split('=');
+    if (parts.length === 2) {
+      envConfig[parts[0].trim()] = parts[1].trim();
+    }
+  });
+} catch (err) {
+  console.log('Could not load .env file. Telegram alerts will be disabled.');
+}
+
+const TELEGRAM_BOT_TOKEN = envConfig.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_CHAT_ID = envConfig.TELEGRAM_CHAT_ID;
+
+function sendTelegramAlert(message) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || TELEGRAM_BOT_TOKEN === 'YOUR_BOT_TOKEN_HERE') {
+    // Silently fail if not configured
+    return;
+  }
+
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+  const postData = JSON.stringify({
+    chat_id: TELEGRAM_CHAT_ID,
+    text: message,
+  });
+
+  const options = {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(postData),
+    },
+  };
+
+  const req = https.request(url, options, (res) => {
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      console.error(`Telegram API request failed with status code: ${res.statusCode}`);
+      res.on('data', (chunk) => {
+        console.error('Telegram API response:', chunk.toString());
+      });
+    }
+  });
+
+  req.on('error', (e) => {
+    console.error(`Problem with Telegram API request: ${e.message}`);
+  });
+
+  req.write(postData);
+  req.end();
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -70,25 +125,64 @@ const insertHistoryStmt = db.prepare(`
   VALUES (@id, @name, @timestamp, @battery, @load, @temperature)
 `);
 
+const getLastHistoryStmt = db.prepare(
+  'SELECT battery, load, temperature FROM ups_history WHERE id = ? ORDER BY timestamp DESC LIMIT 1'
+);
+
 function recordHistory(entries) {
   const now = Date.now();
   const cutoff = now - UPS_HISTORY_MAX_DAYS * 24 * 60 * 60 * 1000;
 
-  const insertMany = db.transaction((rows) => {
-    rows.forEach((row) => insertHistoryStmt.run(row));
-    db.prepare('DELETE FROM ups_history WHERE timestamp < ?').run(cutoff);
-  });
+  const rowsToInsert = [];
 
-  const rows = entries.map((ups) => ({
-    id: ups.id,
-    name: ups.name,
-    timestamp: now,
-    battery: typeof ups.battery === 'number' ? ups.battery : null,
-    load: typeof ups.load === 'number' ? ups.load : null,
-    temperature: typeof ups.temperature === 'number' ? ups.temperature : null
-  }));
+  for (const ups of entries) {
+    // We only care about online UPSes
+    if (ups.status !== 'online') {
+      continue;
+    }
+      
+    const lastEntry = getLastHistoryStmt.get(ups.id);
 
-  insertMany(rows);
+    const newBattery = typeof ups.battery === 'number' ? ups.battery : null;
+    const newLoad = typeof ups.load === 'number' ? ups.load : null;
+    const newTemp = typeof ups.temperature === 'number' ? ups.temperature : null;
+
+    let changed = false;
+    if (!lastEntry) {
+      changed = true; // No previous entry
+    } else {
+      // Compare with last entry.
+      if (
+        lastEntry.battery !== newBattery ||
+        lastEntry.load !== newLoad ||
+        lastEntry.temperature !== newTemp
+      ) {
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      rowsToInsert.push({
+        id: ups.id,
+        name: ups.name,
+        timestamp: now,
+        battery: newBattery,
+        load: newLoad,
+        temperature: newTemp,
+      });
+    }
+  }
+
+  if (rowsToInsert.length > 0) {
+    const insertMany = db.transaction((rows) => {
+      rows.forEach((row) => insertHistoryStmt.run(row));
+    });
+    insertMany(rowsToInsert);
+    console.log(`Recorded history for ${rowsToInsert.length} changed UPS(es).`);
+  }
+
+  // Pruning old data can still happen every time.
+  db.prepare('DELETE FROM ups_history WHERE timestamp < ?').run(cutoff);
 }
 
 // Quick SNMP probe to check if an IP has a UPS (returns true/false)
@@ -291,8 +385,22 @@ app.post('/api/ups/:id/update', (req, res) => {
     res.json({ success: true, ups });
 });
 
+app.post('/api/test-alert', (req, res) => {
+    try {
+        const message = req.body?.message || 'This is a test alert from the UPS Dashboard.';
+        sendTelegramAlert(message);
+        console.log('Test alert sent via API request.');
+        res.json({ success: true, message: 'Test alert sent!' });
+    } catch (error) {
+        console.error('Failed to send test alert via API:', error);
+        res.status(500).json({ success: false, error: 'Failed to send test alert.' });
+    }
+});
+
 // --- Background polling for history ---
 const POLLING_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+let upsLastState = {};
 
 async function pollUpsData() {
   if (!upsConfig.length) {
@@ -300,9 +408,21 @@ async function pollUpsData() {
   }
   
   try {
-    const results = await Promise.all(upsConfig.map((ups) => queryUps(ups)));
-    recordHistory(results);
-    console.log(`Successfully polled ${results.length} UPS(es) for history.`);
+    const newUspStates = await Promise.all(upsConfig.map((ups) => queryUps(ups)));
+
+    for (const newUspState of newUspStates) {
+        const lastState = upsLastState[newUspState.id];
+        if (lastState) {
+            if (lastState.status === 'online' && newUspState.status === 'offline') {
+                sendTelegramAlert(`🚨 UPS OFFLINE: ${newUspState.name} (${newUspState.ip}) is now offline.`);
+            } else if (lastState.status === 'offline' && newUspState.status === 'online') {
+                sendTelegramAlert(`✅ UPS ONLINE: ${newUspState.name} (${newUspState.ip}) is back online.`);
+            }
+        }
+        upsLastState[newUspState.id] = newUspState;
+    }
+
+    recordHistory(newUspStates);
   } catch (err) {
     console.error('Error during scheduled UPS poll:', err);
   }
