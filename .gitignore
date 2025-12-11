@@ -29,3 +29,4 @@ npm-debug.log*
 # Optional: keep package-lock.json if you want reproducible builds
 # But typically you'd commit it, so I'm excluding it above
 
+ups-config.json
