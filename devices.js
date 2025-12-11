@@ -8,7 +8,55 @@ document.addEventListener('DOMContentLoaded', async function() {
     initializeDevicesPage();
     await loadDeviceData();
     renderDeviceTable();
+
+    // Add event listener for the edit form
+    const editForm = document.getElementById('editDeviceForm');
+    if (editForm) {
+        editForm.addEventListener('submit', saveDeviceName);
+    }
 });
+
+// Save device name
+async function saveDeviceName(event) {
+    event.preventDefault();
+    
+    const deviceId = document.getElementById('editDeviceId').value;
+    const newName = document.getElementById('editDeviceName').value;
+    
+    if (!deviceId || !newName) {
+        showNotification('Invalid device data', 'error');
+        return;
+    }
+    
+    try {
+        const res = await fetch(`/api/ups/${deviceId}/update`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ name: newName })
+        });
+        
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.message || 'Failed to save device name');
+        }
+        
+        showNotification('Device name updated successfully', 'success');
+        closeEditDeviceModal();
+        
+        // Update local data and re-render
+        const device = deviceData.find(d => d.id === deviceId);
+        if (device) {
+            device.name = newName;
+        }
+        renderDeviceTable();
+        
+    } catch (err) {
+        showNotification(`Error: ${err.message}`, 'error');
+        console.error('Failed to save device name:', err);
+    }
+}
 
 // Load device data from backend (SNMP via /api/ups), with fallback to demo data
 async function loadDeviceData() {
@@ -249,17 +297,56 @@ function configureDevice(deviceId) {
     const device = deviceData.find(d => d.id === deviceId);
     if (!device) return;
 
-    const configPanel = document.querySelector('[data-config-panel="network"]');
-    if (configPanel && typeof configPanel.scrollIntoView === 'function') {
-        configPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    document.getElementById('editDeviceId').value = device.id;
+    document.getElementById('editDeviceName').value = device.name;
 
-    showNotification(`Configure this UPS in ups-config.json (id: ${device.id}, name: ${device.name}, ip: ${device.ip})`, 'info');
+    document.getElementById('editDeviceModal').classList.remove('hidden');
+    
+    anime({
+        targets: '#editDeviceModal .glass',
+        opacity: [0, 1],
+        scale: [0.8, 1],
+        duration: 300,
+        easing: 'easeOutQuart'
+    });
 }
 
-// Show add device modal
-function showAddDeviceModal() {
-    showNotification('Add device modal would open here', 'info');
+// Close edit device modal
+function closeEditDeviceModal() {
+    const modal = document.getElementById('editDeviceModal');
+    
+    anime({
+        targets: '#editDeviceModal .glass',
+        opacity: [1, 0],
+        scale: [1, 0.8],
+        duration: 200,
+        easing: 'easeInQuart',
+        complete: () => {
+            modal.classList.add('hidden');
+        }
+    });
+}
+
+// Run discovery
+async function runDiscovery() {
+    showNotification('Starting UPS discovery...', 'info');
+    try {
+        const res = await fetch('/api/discover', { method: 'POST' });
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.message || 'Discovery failed');
+        }
+        const result = await res.json();
+        const message = `Discovery complete: ${result.discovered} new UPS(es) found.`;
+        showNotification(message, 'success');
+        
+        // Reload device data and re-render table
+        await loadDeviceData();
+        renderDeviceTable();
+    } catch (err) {
+        showNotification(`Error during discovery: ${err.message}`, 'error');
+        console.error('Discovery error:', err);
+    }
 }
 
 // Bulk configure devices

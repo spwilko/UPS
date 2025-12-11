@@ -9,6 +9,7 @@ const PORT = process.env.PORT || 3001;
 
 const publicDir = __dirname;
 app.use(express.static(publicDir));
+app.use(express.json());
 
 // --- Load UPS config (names + IPs) ---
 const configPath = path.join(__dirname, 'ups-config.json');
@@ -270,6 +271,49 @@ app.post('/api/discover', async (req, res) => {
     res.status(500).json({ error: 'Discovery failed', message: err.message });
   }
 });
+
+app.post('/api/ups/:id/update', (req, res) => {
+    const { id } = req.params;
+    const { name } = req.body;
+
+    if (!name) {
+        return res.status(400).json({ error: 'Name is required' });
+    }
+
+    const ups = upsConfig.find(u => u.id === id);
+
+    if (!ups) {
+        return res.status(404).json({ error: 'UPS not found' });
+    }
+
+    ups.name = name;
+    saveConfig();
+    res.json({ success: true, ups });
+});
+
+// --- Background polling for history ---
+const POLLING_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+async function pollUpsData() {
+  if (!upsConfig.length) {
+    return;
+  }
+  
+  try {
+    const results = await Promise.all(upsConfig.map((ups) => queryUps(ups)));
+    recordHistory(results);
+    console.log(`Successfully polled ${results.length} UPS(es) for history.`);
+  } catch (err) {
+    console.error('Error during scheduled UPS poll:', err);
+  }
+}
+
+// Start polling timer
+setTimeout(() => {
+  pollUpsData().catch(err => console.error('Initial poll failed:', err));
+}, 10000); // First run after 10 seconds
+setInterval(pollUpsData, POLLING_INTERVAL_MS);
+console.log(`History polling enabled: will query UPS data every ${POLLING_INTERVAL_MS / 1000 / 60} minutes.`);
 
 // Auto-discovery: run every hour (optional, can be disabled)
 const AUTO_DISCOVERY_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
