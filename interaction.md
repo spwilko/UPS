@@ -118,6 +118,7 @@ A comprehensive web-based monitoring system for APC UPS units with NMC3 network 
   - Email recipients configuration
   - SMS notifications
   - Webhook URL for external integrations
+  - Telegram alerts (online/offline changes and daily summary message at scheduled time)
 
 - **Alert History Chart**: Timeline visualization
   - Shows alert trends over time
@@ -239,6 +240,7 @@ A comprehensive web-based monitoring system for APC UPS units with NMC3 network 
 - `GET /api/ups` - Current status of all UPSes
 - `GET /api/ups/history?range=1|2|7` - Historical data for timelines
 - `POST /api/discover` - Manual network discovery trigger
+- `POST /api/daily-summary/test` - Manual trigger for the Telegram daily summary
 
 ### Performance Considerations
 - Asynchronous SNMP queries (Promise.all for parallel requests)

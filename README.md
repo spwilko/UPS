@@ -7,6 +7,7 @@ A comprehensive web-based monitoring dashboard for APC UPS units with NMC3 netwo
 - 🔋 **Real-time Monitoring**: Live status updates for all UPS units
 - 📊 **Interactive Dashboards**: Visual charts and performance timelines
 - 🚨 **Alert System**: Automatic alerts for critical conditions (low battery, high temperature, overload)
+- 💬 **Telegram Notifications**: Daily status summary and online/offline alerts
 - 🔍 **Auto-Discovery**: Automatically detects and adds UPSes on your network (10.40.40.2-30)
 - 📈 **Historical Data**: SQLite-based history tracking with 1/2/7-day timeline views
 - 🎨 **Modern UI**: Beautiful, responsive dashboard with glassmorphism design
@@ -160,6 +161,14 @@ Manually trigger network discovery.
 }
 ```
 
+### `POST /api/daily-summary/test`
+Manually trigger the daily Telegram summary (useful for testing config).
+
+**Response**:
+```json
+{ "success": true }
+```
+
 ## SNMP Configuration
 
 The system uses standard UPS MIB OIDs:
@@ -247,10 +256,14 @@ node server.js
 
 - `PORT`: Server port (default: `3000`)
 - `AUTO_DISCOVERY`: Enable/disable auto-discovery (`true`/`false`, default: `true`)
+- `TELEGRAM_BOT_TOKEN`: Bot token for Telegram alerts
+- `TELEGRAM_CHAT_ID`: Chat ID (or group ID) for Telegram alerts
+- `DAILY_SUMMARY_HOUR`: Hour (0-23) to send the daily Telegram summary (default: `8`)
+- `DAILY_SUMMARY_MINUTE`: Minute (0-59) to send the daily Telegram summary (default: `0`)
 
 Example:
 ```bash
-PORT=8080 AUTO_DISCOVERY=false node server.js
+PORT=8080 AUTO_DISCOVERY=false DAILY_SUMMARY_HOUR=8 DAILY_SUMMARY_MINUTE=0 TELEGRAM_BOT_TOKEN=xxxx TELEGRAM_CHAT_ID=yyyy node server.js
 ```
 
 ## Project Structure
