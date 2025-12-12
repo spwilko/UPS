@@ -102,6 +102,8 @@ const oids = {
   outputLoad:   '1.3.6.1.2.1.33.1.4.4.1.5.1',  // upsOutputPercentLoad
   tempC:        '1.3.6.1.2.1.33.1.2.7.0'       // upsBatteryTemperature
 };
+// Generic system name OID (used for auto-naming newly discovered UPSes)
+const SYS_NAME_OID = '1.3.6.1.2.1.1.5.0';
 
 // --- SQLite history store (persists on disk, shared between Mac and Pi) ---
 const dbPath = path.join(__dirname, 'ups-history.sqlite');
@@ -187,7 +189,13 @@ function recordHistory(entries) {
   db.prepare('DELETE FROM ups_history WHERE timestamp < ?').run(cutoff);
 }
 
-// Quick SNMP probe to check if an IP has a UPS (returns true/false)
+function normalizeSnmpString(value) {
+  if (Buffer.isBuffer(value)) return value.toString();
+  if (typeof value === 'string') return value;
+  return undefined;
+}
+
+// Quick SNMP probe to check if an IP has a UPS and fetch its sysName
 function probeUps(ip, community = 'public', timeoutMs = 2000) {
   return new Promise((resolve) => {
     const session = snmp.createSession(ip, community, {
@@ -196,15 +204,16 @@ function probeUps(ip, community = 'public', timeoutMs = 2000) {
       timeout: timeoutMs
     });
     
-    // Just try to read battery charge OID - if we get a response, it's a UPS
-    session.get([oids.batteryCharge], (error, varbinds) => {
+    // Try reading battery charge (to validate UPS) and sysName (for naming)
+    session.get([oids.batteryCharge, SYS_NAME_OID], (error, varbinds) => {
       session.close();
       if (error || !varbinds || varbinds.length === 0) {
-        resolve(false);
+        resolve({ isUps: false, sysName: null });
       } else {
-        // Check if we got a valid numeric value (UPS battery should be 0-100)
-        const value = varbinds[0]?.value;
-        resolve(typeof value === 'number' && value >= 0 && value <= 100);
+        const batteryValue = varbinds[0]?.value;
+        const isUps = typeof batteryValue === 'number' && batteryValue >= 0 && batteryValue <= 100;
+        const sysName = normalizeSnmpString(varbinds[1]?.value) || null;
+        resolve({ isUps, sysName });
       }
     });
   });
@@ -315,10 +324,13 @@ async function runDiscovery(community = 'public') {
     
     promises.push(
       probeUps(ip, community)
-        .then(isUps => {
-          if (isUps) {
-            // Generate a name based on IP (you can customize this)
-            const name = `UPS-${networkBase.split('.').pop()}-${i}`;
+        .then(result => {
+          if (result.isUps) {
+            const sysName = result.sysName?.trim();
+            // Prefer SNMP sysName; fall back to generated name if missing
+            const name = sysName && sysName.length > 0
+              ? sysName
+              : `UPS-${networkBase.split('.').pop()}-${i}`;
             const id = `ups-${i}`;
             
             discovered.push({
