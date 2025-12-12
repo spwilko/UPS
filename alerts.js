@@ -653,3 +653,21 @@ document.addEventListener('click', function(event) {
         closeAlertModal();
     }
 });
+
+async function sendTestTelegramAlert() {
+    try {
+        const res = await fetch('/api/test-alert', { method: 'POST' });
+        if (!res.ok) {
+            throw new Error('Server returned an error');
+        }
+        const data = await res.json();
+        if (data.success) {
+            showNotification('Test alert sent to Telegram!', 'success');
+        } else {
+            throw new Error(data.error || 'Failed to send test alert');
+        }
+    } catch (error) {
+        console.error('Error sending test Telegram alert:', error);
+        showNotification(`Error: ${error.message}`, 'error');
+    }
+}

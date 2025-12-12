@@ -21,6 +21,8 @@ try {
 
 const TELEGRAM_BOT_TOKEN = envConfig.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = envConfig.TELEGRAM_CHAT_ID;
+const DAILY_SUMMARY_HOUR = parseInt(process.env.DAILY_SUMMARY_HOUR || envConfig.DAILY_SUMMARY_HOUR || '8', 10);
+const DAILY_SUMMARY_MINUTE = parseInt(process.env.DAILY_SUMMARY_MINUTE || envConfig.DAILY_SUMMARY_MINUTE || '0', 10);
 
 function sendTelegramAlert(message) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || TELEGRAM_BOT_TOKEN === 'YOUR_BOT_TOKEN_HERE') {
@@ -397,6 +399,16 @@ app.post('/api/test-alert', (req, res) => {
     }
 });
 
+// Manual trigger for daily summary
+app.post('/api/daily-summary/test', async (req, res) => {
+  try {
+    await sendDailySummary('manual-summary');
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to run manual daily summary.' });
+  }
+});
+
 // --- Background polling for history ---
 const POLLING_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -428,12 +440,68 @@ async function pollUpsData() {
   }
 }
 
+// --- Daily Telegram summary ---
+function msUntilNextTime(hour, minute) {
+  const now = new Date();
+  const target = new Date(now);
+  target.setHours(hour, minute, 0, 0);
+  if (target <= now) {
+    target.setDate(target.getDate() + 1);
+  }
+  return target.getTime() - now.getTime();
+}
+
+async function sendDailySummary(runId = 'daily-summary') {
+  if (!upsConfig.length) {
+    return;
+  }
+
+  try {
+    const states = await Promise.all(upsConfig.map((ups) => queryUps(ups)));
+
+    const counts = states.reduce(
+      (acc, s) => {
+        acc.total += 1;
+        acc.online += s.status === 'online' ? 1 : 0;
+        return acc;
+      },
+      { total: 0, online: 0 }
+    );
+
+    const lines = states.map((s) => {
+      const batteryText = typeof s.battery === 'number' ? `${s.battery}%` : 'n/a';
+      const loadText = typeof s.load === 'number' ? `${s.load}%` : 'n/a';
+      const tempText = typeof s.temperature === 'number' ? `${s.temperature}C` : 'n/a';
+      return `${s.name} [${s.status}] — battery ${batteryText}, load ${loadText}, temp ${tempText}`;
+    });
+
+    const header = `Daily UPS summary (${new Date().toLocaleDateString()} ${DAILY_SUMMARY_HOUR.toString().padStart(2, '0')}:${DAILY_SUMMARY_MINUTE.toString().padStart(2, '0')})`;
+    const message = [header, `Online ${counts.online}/${counts.total}`, ...lines].join('\n');
+
+    sendTelegramAlert(message);
+  } catch (err) {
+    console.error('Failed to send daily UPS summary', err);
+  }
+}
+
+function scheduleNextSummary() {
+  const delay = msUntilNextTime(DAILY_SUMMARY_HOUR, DAILY_SUMMARY_MINUTE);
+
+  setTimeout(async () => {
+    await sendDailySummary();
+    scheduleNextSummary();
+  }, delay);
+}
+
 // Start polling timer
 setTimeout(() => {
   pollUpsData().catch(err => console.error('Initial poll failed:', err));
 }, 10000); // First run after 10 seconds
 setInterval(pollUpsData, POLLING_INTERVAL_MS);
 console.log(`History polling enabled: will query UPS data every ${POLLING_INTERVAL_MS / 1000 / 60} minutes.`);
+
+// Start daily summary scheduler (defaults to 09:00 local time unless overridden by env)
+scheduleNextSummary();
 
 // Auto-discovery: run every hour (optional, can be disabled)
 const AUTO_DISCOVERY_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
